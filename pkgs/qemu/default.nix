@@ -6,19 +6,18 @@
   qemu-src,
   cpu ? "amd",
 
-  # Spoofing options (host-specific, passed from NixOS module)
   acpiOemId ? "ALASKA",
   acpiOemTableId ? "A M I   ",
   acpiCreatorId ? "ACPI",
-  acpiPmProfile ? 1, # 1 = Desktop, 2 = Mobile
+  acpiPmProfile ? 1,
   smbiosManufacturer ? "Advanced Micro Devices, Inc.",
   spoofModels ? true,
-  ideModel ? null, # random if null
+  spoofUsbSerials ? false,
+  ideModel ? null,
   nvmeModel ? null,
   cdModel ? null,
   cfataModel ? null,
 
-  # Build dependencies
   python3,
   pkg-config,
   ninja,
@@ -80,48 +79,14 @@ let
     else
       "${autovirt}/patches/QEMU/Intel-v10.2.0.patch";
 
-  defaultIdeModels = [
-    "Samsung SSD 870 EVO 1TB"
-    "WD Blue SN570 NVMe 500GB"
-    "Crucial MX500 1TB"
-    "Seagate BarraCuda 2TB"
-    "Kingston A2000 NVMe 1TB"
-    "Toshiba MQ04ABF100"
-    "HGST Travelstar 7K1000"
-    "Samsung SSD 980 PRO 2TB"
-  ];
-
-  defaultNvmeModels = [
-    "Samsung 990 PRO 2TB"
-    "WD Black SN850X 1TB"
-    "Crucial T500 2TB"
-    "SK Hynix Platinum P41 1TB"
-    "Kingston FURY Renegade 2TB"
-    "Sabrent Rocket 4 Plus 2TB"
-    "Corsair MP600 PRO XT 4TB"
-    "Samsung 980 PRO 1TB"
-  ];
-
-  defaultCdModels = [
-    "HL-DT-ST BD-RE WH16NS60"
-    "ASUS BW-16D1HT"
-    "Pioneer BDR-XD07B"
-    "LG BP60NB10"
-    "Samsung SH-B123L"
-  ];
-
-  defaultCfataModels = [
-    "Hitachi HMS360404D5CF00"
-    "Micron MTFDDAK256MAM"
-    "Samsung MZMPC128HBFU"
-  ];
-
-  selectedIdeModel = if ideModel != null then ideModel else builtins.head defaultIdeModels;
-  selectedNvmeModel = if nvmeModel != null then nvmeModel else builtins.head defaultNvmeModels;
-  selectedCdModel = if cdModel != null then cdModel else builtins.head defaultCdModels;
-  selectedCfataModel = if cfataModel != null then cfataModel else builtins.head defaultCfataModels;
-
-  pmProfileComment = if acpiPmProfile == 2 then "Mobile" else "Desktop";
+  selectedIdeModel =
+    if ideModel != null then ideModel else "Samsung SSD 870 EVO 1TB";
+  selectedNvmeModel =
+    if nvmeModel != null then nvmeModel else "Samsung 990 PRO 2TB";
+  selectedCdModel =
+    if cdModel != null then cdModel else "HL-DT-ST BD-RE WH16NS60";
+  selectedCfataModel =
+    if cfataModel != null then cfataModel else "Hitachi HMS360404D5CF00";
 in
 stdenv.mkDerivation {
   pname = "barely-metal-qemu";
@@ -189,12 +154,9 @@ stdenv.mkDerivation {
   dontUseMesonConfigure = true;
 
   postPatch = ''
-    # Apply AutoVirt anti-detection patch
     patch -p1 < ${patchFile}
 
-    # --- Dynamic spoofing (replaces AutoVirt's shell functions) ---
-
-    # spoof_acpi: inject ACPI OEM identifiers
+    # spoof_acpi: ACPI OEM identifiers
     sed -i \
       -e 's/\(#define ACPI_BUILD_APPNAME6 \)"[^"]*"/\1"${acpiOemId}"/' \
       -e 's/\(#define ACPI_BUILD_APPNAME8 \)"[^"]*"/\1"${acpiOemTableId}"/' \
@@ -202,17 +164,16 @@ stdenv.mkDerivation {
 
     sed -i 's/"ACPI"/"${acpiCreatorId}"/g' hw/acpi/aml-build.c
 
-    # spoof_acpi: PM profile
     ${lib.optionalString (acpiPmProfile == 2) ''
       sed -i 's/1 \/\* Desktop \*\/, 1/2 \/* Mobile *\/, 1/' hw/acpi/aml-build.c
     ''}
 
-    # spoof_smbios: inject processor manufacturer
+    # spoof_smbios: processor manufacturer
     sed -i \
       "s/smbios_set_defaults(\"[^\"]*\",/smbios_set_defaults(\"${smbiosManufacturer}\",/" \
       hw/i386/fw_cfg.c
 
-    # spoof_models: inject realistic drive model strings
+    # spoof_models: drive model strings
     ${lib.optionalString spoofModels ''
       sed -i -E \
         -e 's/"HL-DT-ST BD-RE WH16NS60"/"${selectedCdModel}"/' \
@@ -223,6 +184,18 @@ stdenv.mkDerivation {
       sed -i -E \
         's/"NVMe Ctrl"/"${selectedNvmeModel}"/' \
         hw/nvme/ctrl.c
+    ''}
+
+    # spoof_serials: randomize USB device serial strings
+    ${lib.optionalString spoofUsbSerials ''
+      for f in hw/usb/*.c; do
+        for pat in STRING_SERIALNUMBER STR_SERIALNUMBER STR_SERIAL_MOUSE STR_SERIAL_TABLET STR_SERIAL_KEYBOARD STR_SERIAL_COMPAT; do
+          while IFS= read -r lineno; do
+            serial=$(head -c 10 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 10 | tr 'a-f' 'A-F')
+            sed -r -i "''${lineno}s/(\[\s*$pat\s*\]\s*=\s*\")[^\"]*(\")/\1$serial\2/" "$f"
+          done < <(grep -n "$pat" "$f" | grep -oP '^\d+')
+        done
+      done
     ''}
   '';
 
@@ -261,17 +234,13 @@ stdenv.mkDerivation {
   '';
 
   preBuild = "cd build";
-
   enableParallelBuilding = true;
 
   postInstall = ''
-    # Create qemu-kvm symlink
     ln -s $out/bin/qemu-system-x86_64 $out/bin/qemu-kvm
   '';
 
-  # Nix sandbox doesn't have /dev/kvm etc.
   doCheck = false;
-
   requiredSystemFeatures = [ "big-parallel" ];
 
   meta = {

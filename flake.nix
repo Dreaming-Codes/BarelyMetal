@@ -31,7 +31,6 @@
     let
       supportedSystems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-
       pkgsFor = system: import nixpkgs { inherit system; };
     in
     {
@@ -54,13 +53,14 @@
           callPackage = pkgs.callPackage;
         in
         {
+          default = callPackage ./pkgs/probe { };
           probe = callPackage ./pkgs/probe { };
+          deploy = callPackage ./pkgs/libvirt-xml { };
 
           qemu-patched = callPackage ./pkgs/qemu {
             inherit autovirt qemu-src;
             cpu = "amd";
           };
-
           qemu-patched-intel = callPackage ./pkgs/qemu {
             inherit autovirt qemu-src;
             cpu = "intel";
@@ -70,17 +70,14 @@
             inherit autovirt edk2-src;
             cpu = "amd";
           };
-
           ovmf-patched-intel = callPackage ./pkgs/ovmf {
             inherit autovirt edk2-src;
             cpu = "intel";
           };
 
           smbios-spoofer = callPackage ./pkgs/smbios-spoofer { inherit autovirt; };
-
           utils = callPackage ./pkgs/utils { inherit autovirt; };
-
-          default = callPackage ./pkgs/probe { };
+          guest-scripts = callPackage ./pkgs/guest-scripts { inherit autovirt; };
         }
       );
 

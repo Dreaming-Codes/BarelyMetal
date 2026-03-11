@@ -7,7 +7,6 @@
   edk2,
   cpu ? "amd",
 
-  # Host firmware spoofing values (injected from NixOS module)
   biosVendor ? "American Megatrends International, LLC.",
   biosVersion ? "1.0",
   biosDate ? "01/01/2024",
@@ -18,7 +17,9 @@
   acpiCreatorId ? "0x20202020",
   acpiCreatorRevision ? "0x01000013",
 
-  # Build dependencies
+  # Boot logo: path to a BMP file, or null to use EDK2 default
+  bootLogo ? null,
+
   nasm,
   acpica-tools,
   python3,
@@ -68,19 +69,16 @@ stdenv.mkDerivation {
   '';
 
   postPatch = ''
-    # Apply AutoVirt anti-detection patch
     patch -p1 < ${patchFile}
 
-    # --- Dynamic firmware metadata spoofing ---
-
-    # Inject host BIOS vendor/version/date into SMBIOS fallback strings
+    # SMBIOS Type 0 strings
     sed -i \
       -e 's@VendStr = L"unknown";@VendStr = L"${biosVendor}";@' \
       -e 's@VersStr = L"unknown";@VersStr = L"${biosVersion}";@' \
       -e 's@DateStr = L"02/02/2022";@DateStr = L"${biosDate}";@' \
       OvmfPkg/SmbiosPlatformDxe/SmbiosPlatformDxe.c
 
-    # Inject ACPI/firmware PCDs into MdeModulePkg
+    # MdeModulePkg PCDs
     sed -E -i \
       -e 's@(PcdFirmwareVendor)\|L"EDK II"\|@\1|L"${biosVendor}"|@' \
       -e 's@(PcdFirmwareRevision)\|0x00010000\|@\1|${biosRevision}|@' \
@@ -92,6 +90,11 @@ stdenv.mkDerivation {
       -e 's@(PcdAcpiDefaultCreatorId)\|0x[0-9a-fA-F]+\|@\1|${acpiCreatorId}|@' \
       -e 's@(PcdAcpiDefaultCreatorRevision)\|0x[0-9a-fA-F]+\|@\1|${acpiCreatorRevision}|@' \
       MdeModulePkg/MdeModulePkg.dec
+
+    # Boot logo replacement (removes EDK2/Tux fingerprint)
+    ${lib.optionalString (bootLogo != null) ''
+      cp -v ${bootLogo} MdeModulePkg/Logo/Logo.bmp
+    ''}
   '';
 
   configurePhase = ''
@@ -134,7 +137,6 @@ stdenv.mkDerivation {
 
   enableParallelBuilding = true;
   doCheck = false;
-
   requiredSystemFeatures = [ "big-parallel" ];
 
   passthru = {
