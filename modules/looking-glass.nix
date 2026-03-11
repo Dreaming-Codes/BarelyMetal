@@ -20,14 +20,26 @@ let
     (if hasFacter then facterLib.detectCpuFromFacter facterReport else null)
   ] "amd";
 
+  # Spoof as a plausible host-vendor PCI device so ivshmem doesn't
+  # stick out as Red Hat VirtIO (0x1af4:0x1110).
   spoofedVendorId =
     if resolvedCpu == "intel" then "0x8086" else "0x1022";
   spoofedDeviceId =
     if resolvedCpu == "intel" then "0x0E20" else "0x1440";
 
-  kvmfrModule = pkgs.linuxPackages.callPackage ../pkgs/kvmfr {
-    inherit spoofedVendorId spoofedDeviceId;
-  };
+  baseKvmfr = config.boot.kernelPackages.kvmfr;
+
+  patchedKvmfr = baseKvmfr.overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + ''
+      substituteInPlace kvmfr.c \
+        --replace-fail '#define PCI_KVMFR_VENDOR_ID 0x1af4' \
+                       '#define PCI_KVMFR_VENDOR_ID ${spoofedVendorId}' \
+        --replace-fail '#define PCI_KVMFR_DEVICE_ID 0x1110' \
+                       '#define PCI_KVMFR_DEVICE_ID ${spoofedDeviceId}'
+    '';
+  });
+
+  kvmfrModule = if cfg.spoofKvmfrIds then patchedKvmfr else baseKvmfr;
 in
 {
   options.barelyMetal.lookingGlass = {
@@ -74,8 +86,6 @@ in
     '';
 
     boot.kernelModules = [ "kvmfr" ];
-
-    # TODO: Build patched kvmfr module when spoofKvmfrIds is true
-    # For now this requires the user to have kvmfr in their kernel or extraModulePackages
+    boot.extraModulePackages = [ kvmfrModule ];
   };
 }
