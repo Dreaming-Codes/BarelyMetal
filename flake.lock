@@ -1,0 +1,80 @@
+{
+  "nodes": {
+    "autovirt": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772738088,
+        "narHash": "sha256-rmUfGWxz0Z2Lwmdvyt5oHNOzZGndyusWwu7TnFq1qC4=",
+        "owner": "Scrut1ny",
+        "repo": "AutoVirt",
+        "rev": "00ec7153c06184a36f028559fec3ae0e6051cbf6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Scrut1ny",
+        "repo": "AutoVirt",
+        "type": "github"
+      }
+    },
+    "edk2-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1770983746,
+        "narHash": "sha256-rdRn1waCZ9h83cZR5cQFLNuvUKMS236PjuDQ0WHNlGs=",
+        "owner": "tianocore",
+        "repo": "edk2",
+        "rev": "b7a715f7c03c45c6b4575bf88596bfd79658b8ce",
+        "type": "github"
+      },
+      "original": {
+        "owner": "tianocore",
+        "ref": "edk2-stable202602",
+        "repo": "edk2",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1772963539,
+        "narHash": "sha256-9jVDGZnvCckTGdYT53d/EfznygLskyLQXYwJLKMPsZs=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "9dcb002ca1690658be4a04645215baea8b95f31d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "qemu-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1766461447,
+        "narHash": "sha256-Ucd7iMQN7bE/IPwc4ZXMIplC0Bo5LTfLY8j34Zze8og=",
+        "owner": "qemu-project",
+        "repo": "qemu",
+        "rev": "698104725efad4b29079d857dfdebbd804e34c99",
+        "type": "gitlab"
+      },
+      "original": {
+        "owner": "qemu-project",
+        "ref": "v10.2.0",
+        "repo": "qemu",
+        "type": "gitlab"
+      }
+    },
+    "root": {
+      "inputs": {
+        "autovirt": "autovirt",
+        "edk2-src": "edk2-src",
+        "nixpkgs": "nixpkgs",
+        "qemu-src": "qemu-src"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
