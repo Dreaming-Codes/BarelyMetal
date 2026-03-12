@@ -1,9 +1,7 @@
 {
   lib,
-  stdenv,
-  fetchurl,
+  qemu,
   autovirt,
-  qemu-src,
   cpu ? "amd",
 
   acpiOemId ? "ALASKA",
@@ -17,58 +15,6 @@
   nvmeModel ? null,
   cdModel ? null,
   cfataModel ? null,
-
-  python3,
-  pkg-config,
-  ninja,
-  meson,
-  perl,
-  flex,
-  bison,
-  makeWrapper,
-  removeReferencesTo,
-  dtc,
-  glib,
-  gnutls,
-  zlib,
-  pixman,
-  vde2,
-  lzo,
-  snappy,
-  libtasn1,
-  libslirp,
-  libcbor,
-  curl,
-  libcap_ng,
-  libcap,
-  attr,
-  libaio,
-  libusb1,
-  usbredir,
-  spice,
-  spice-protocol,
-  libepoxy,
-  libdrm,
-  virglrenderer,
-  SDL2,
-  SDL2_image,
-  gtk3,
-  gettext,
-  vte,
-  wrapGAppsHook3,
-  libjpeg,
-  libpng,
-  libseccomp,
-  numactl,
-  liburing,
-  fuse3,
-  capstone,
-  alsa-lib,
-  pipewire,
-  jack2,
-  pulseaudio,
-  mesa,
-  libevdev,
 }:
 
 let
@@ -88,74 +34,15 @@ let
   selectedCfataModel =
     if cfataModel != null then cfataModel else "Hitachi HMS360404D5CF00";
 in
-stdenv.mkDerivation {
+(qemu.override {
+  hostCpuTargets = [ "x86_64-softmmu" ];
+  smbdSupport = false;
+}).overrideAttrs (old: {
   pname = "barely-metal-qemu";
-  version = "10.2.0-barely-metal";
 
-  src = qemu-src;
+  patches = (old.patches or []) ++ [ patchFile ];
 
-  nativeBuildInputs = [
-    python3
-    pkg-config
-    ninja
-    meson
-    perl
-    flex
-    bison
-    makeWrapper
-    removeReferencesTo
-    wrapGAppsHook3
-    dtc
-  ];
-
-  buildInputs = [
-    glib
-    gnutls
-    zlib
-    pixman
-    vde2
-    lzo
-    snappy
-    libtasn1
-    libslirp
-    libcbor
-    curl
-    libcap_ng
-    libcap
-    attr
-    libaio
-    libusb1
-    usbredir
-    spice
-    spice-protocol
-    libepoxy
-    libdrm
-    virglrenderer
-    SDL2
-    SDL2_image
-    gtk3
-    gettext
-    vte
-    libjpeg
-    libpng
-    libseccomp
-    numactl
-    liburing
-    fuse3
-    capstone
-    alsa-lib
-    pipewire
-    jack2
-    pulseaudio
-    mesa
-    libevdev
-  ];
-
-  dontUseMesonConfigure = true;
-
-  postPatch = ''
-    patch -p1 < ${patchFile}
-
+  postPatch = (old.postPatch or "") + ''
     # spoof_acpi: ACPI OEM identifiers
     sed -i \
       -e 's/\(#define ACPI_BUILD_APPNAME6 \)"[^"]*"/\1"${acpiOemId}"/' \
@@ -199,55 +86,12 @@ stdenv.mkDerivation {
     ''}
   '';
 
-  configurePhase = ''
-    runHook preConfigure
-
-    ./configure \
-      --target-list=x86_64-softmmu \
-      --prefix=$out \
-      --enable-libusb \
-      --enable-usb-redir \
-      --enable-spice \
-      --enable-spice-protocol \
-      --enable-linux-io-uring \
-      --enable-fuse \
-      --enable-capstone \
-      --enable-seccomp \
-      --enable-numa \
-      --enable-tpm \
-      --enable-gtk \
-      --enable-sdl \
-      --enable-vnc \
-      --enable-alsa \
-      --enable-pipewire \
-      --enable-jack \
-      --enable-pulseaudio \
-      --enable-opengl \
-      --enable-virglrenderer \
-      --enable-gnutls \
-      --enable-tools \
-      --disable-werror \
-      --disable-docs \
-      --disable-strip
-
-    runHook postConfigure
+  postInstall = (old.postInstall or "") + ''
+    ln -sf $out/bin/qemu-system-x86_64 $out/bin/qemu-kvm
   '';
 
-  preBuild = "cd build";
-  enableParallelBuilding = true;
-
-  postInstall = ''
-    ln -s $out/bin/qemu-system-x86_64 $out/bin/qemu-kvm
-  '';
-
-  doCheck = false;
-  requiredSystemFeatures = [ "big-parallel" ];
-
-  meta = {
+  meta = (old.meta or {}) // {
     description = "QEMU with anti-VM-detection patches (BarelyMetal/AutoVirt)";
-    homepage = "https://github.com/Scrut1ny/AutoVirt";
-    license = lib.licenses.gpl2Plus;
-    platforms = [ "x86_64-linux" ];
     mainProgram = "qemu-system-x86_64";
   };
-}
+})

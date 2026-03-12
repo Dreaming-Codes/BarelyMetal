@@ -150,8 +150,8 @@ writeShellApplication {
       MAC="$OUI:$(printf '%02x:%02x:%02x' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))"
     fi
 
-    # Generate random drive serial
-    DRIVE_SERIAL=$(LC_ALL=C tr -dc 'A-F0-9' </dev/urandom | head -c 20)
+    # Generate random drive serial (use od to avoid SIGPIPE with pipefail)
+    DRIVE_SERIAL=$(od -An -tx1 -N10 /dev/urandom | tr -d ' \n' | tr '[:lower:]' '[:upper:]')
 
     # CPU virtualization feature name
     if [ "$CPU_VENDOR" = "intel" ]; then

@@ -58,11 +58,11 @@
           deploy = callPackage ./pkgs/libvirt-xml { };
 
           qemu-patched = callPackage ./pkgs/qemu {
-            inherit autovirt qemu-src;
+            inherit autovirt;
             cpu = "amd";
           };
           qemu-patched-intel = callPackage ./pkgs/qemu {
-            inherit autovirt qemu-src;
+            inherit autovirt;
             cpu = "intel";
           };
 

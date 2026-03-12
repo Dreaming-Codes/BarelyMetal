@@ -104,7 +104,7 @@ let
   cpuLower = lib.toLower resolvedCpu;
 
   patchedQemu = pkgs.callPackage ../pkgs/qemu {
-    inherit autovirt qemu-src;
+    inherit autovirt;
     cpu = resolvedCpu;
     acpiOemId = resolvedAcpiOemId;
     acpiOemTableId = resolvedAcpiOemTableId;
@@ -138,6 +138,10 @@ let
   # This is how modern nixpkgs libvirtd discovers OVMF (no more ovmf.packages option).
   qemuWithOvmf = pkgs.runCommand "qemu-with-patched-ovmf" {
     nativeBuildInputs = [ pkgs.jq ];
+    inherit (patchedQemu) version;
+    passthru = (patchedQemu.passthru or {}) // {
+      inherit (patchedQemu) version;
+    };
   } ''
     mkdir -p $out
     # Symlink everything from the patched QEMU
@@ -449,7 +453,7 @@ in
     virtualisation.libvirtd = {
       enable = true;
       qemu = {
-        package = qemuWithOvmf;
+        package = patchedQemu;
         swtpm.enable = true;
         verbatimConfig = ''
           user = "root"
@@ -482,7 +486,7 @@ in
 
     environment.systemPackages =
       [
-        qemuWithOvmf
+        patchedQemu
         smbiosSpoofer
         barelyMetalProbe
         deployWrapper
@@ -531,7 +535,7 @@ in
                   varpath="/sys/firmware/efi/efivars/$var-*"
                   for f in $varpath; do
                     [ -f "$f" ] || continue
-                    guid=$(basename "$f" | sed "s/^$var-//")
+                    guid=$(basename "$f" | ${pkgs.gnused}/bin/sed "s/^$var-//")
                     attr=$(od -An -N4 -tu4 "$f" | tr -d ' ')
                     data=$(dd if="$f" bs=1 skip=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
                     if [ "$first" = true ]; then first=false; else echo ','; fi
