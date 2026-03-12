@@ -191,7 +191,7 @@ let
   deployWrapper = pkgs.writeShellScriptBin "barely-metal-deploy-vm" ''
     exec ${barelyMetalDeploy}/bin/barely-metal-deploy \
       --qemu "${patchedQemu}/bin/qemu-system-x86_64" \
-      --ovmf-code "${patchedOvmf}/FV/OVMF_CODE.fd" \
+      --ovmf-code "${stateDir}/firmware/OVMF_CODE.fd" \
       --ovmf-vars "${stateDir}/firmware/OVMF_VARS.fd" \
       --cpu-vendor "${resolvedCpu}" \
       --memory "${toString vmCfg.memory}" \
@@ -520,6 +520,10 @@ in
             fi
           ''}
 
+          # Copy OVMF_CODE.fd to stable path (survives Nix GC / store path changes)
+          cp "${patchedOvmf}/FV/OVMF_CODE.fd" "${stateDir}/firmware/OVMF_CODE.fd"
+          chmod 644 "${stateDir}/firmware/OVMF_CODE.fd"
+
           # Inject host Secure Boot keys into OVMF_VARS.fd
           ${lib.optionalString (spoofCfg.injectSecureBootKeys && virtFwVars != null) ''
             if [ -d /sys/firmware/efi/efivars ]; then
@@ -587,6 +591,7 @@ in
       qemuPackage = patchedQemu;
       ovmfPackage = patchedOvmf;
       smbiosBinPath = "${stateDir}/firmware/smbios.bin";
+      ovmfCodePath = "${stateDir}/firmware/OVMF_CODE.fd";
       ovmfVarsPath = "${stateDir}/firmware/OVMF_VARS.fd";
       firmwareDir = "${stateDir}/firmware";
       autovirtSrc = autovirt;
