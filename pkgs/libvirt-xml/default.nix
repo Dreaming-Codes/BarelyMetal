@@ -48,6 +48,7 @@ writeShellApplication {
     Anti-detection:
       --smbios-bin PATH     Path to smbios.bin
       --acpi-table PATH     Extra ACPI table (.aml), can be repeated
+      --guest-iso PATH      Guest scripts ISO (mounted as SATA CD-ROM)
       --hyperv              Enable Hyper-V passthrough mode
       --cpu-vendor VENDOR   amd or intel (default: amd)
 
@@ -87,6 +88,7 @@ writeShellApplication {
     OVMF_VARS=""
     SMBIOS_BIN=""
     ACPI_TABLES=()
+    GUEST_ISO=""
     HYPERV=false
     CPU_VENDOR="amd"
     MAC=""
@@ -113,6 +115,7 @@ writeShellApplication {
         --ovmf-vars) OVMF_VARS="$2"; shift 2 ;;
         --smbios-bin) SMBIOS_BIN="$2"; shift 2 ;;
         --acpi-table) ACPI_TABLES+=("$2"); shift 2 ;;
+        --guest-iso) GUEST_ISO="$2"; shift 2 ;;
         --hyperv) HYPERV=true; shift ;;
         --cpu-vendor) CPU_VENDOR="$2"; shift 2 ;;
         --mac) MAC="$2"; shift 2 ;;
@@ -205,6 +208,7 @@ writeShellApplication {
 
       # Clock — anti-detection
       --xml "./clock/@offset=localtime"
+      --xml "./clock/timer[@name='hpet']/@present=yes"
       --xml "./clock/timer[@name='tsc']/@present=yes"
       --xml "./clock/timer[@name='tsc']/@mode=native"
       --xml "./clock/timer[@name='kvmclock']/@present=no"
@@ -272,6 +276,11 @@ writeShellApplication {
     for table in "''${ACPI_TABLES[@]}"; do
       args+=('--qemu-commandline=-acpitable' "--qemu-commandline=file=$table")
     done
+
+    # Guest scripts ISO as SATA CD-ROM
+    if [ -n "$GUEST_ISO" ] && [ -f "$GUEST_ISO" ]; then
+      args+=('--disk' "path=$GUEST_ISO,device=cdrom,bus=sata,readonly=on,target.dev=sdc")
+    fi
 
     # Evdev input devices
     for dev in "''${EVDEV_DEVICES[@]}"; do

@@ -19,6 +19,7 @@ stdenv.mkDerivation {
     cp ${autovirt}/resources/scripts/Windows/edid-spoofer.ps1 $out/share/barely-metal/guest-scripts/windows/
     cp ${autovirt}/resources/scripts/Windows/identifier-spoofer.ps1 $out/share/barely-metal/guest-scripts/windows/
     cp ${autovirt}/resources/scripts/Windows/qemu-cleanup.ps1 $out/share/barely-metal/guest-scripts/windows/
+    cp ${./power-fix.ps1} $out/share/barely-metal/guest-scripts/windows/power-fix.ps1
 
     # Bundled ACPI tables
     cp ${autovirt}/patches/QEMU/fake_battery.dsl $out/share/barely-metal/acpi/

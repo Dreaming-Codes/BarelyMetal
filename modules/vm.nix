@@ -185,12 +185,40 @@ let
   barelyMetalDeploy = pkgs.callPackage ../pkgs/libvirt-xml { };
   guestScripts = pkgs.callPackage ../pkgs/guest-scripts { inherit autovirt; };
 
+  # Guest scripts ISO (built by Nix, copied to stable path at activation)
+  guestScriptsIso = pkgs.runCommand "barely-metal-guest-scripts.iso" {
+    nativeBuildInputs = [ pkgs.cdrkit ];
+  } ''
+    mkisofs -o "$out" -V "BM_SCRIPTS" -R -J \
+      "${guestScripts}/share/barely-metal/guest-scripts"
+  '';
+
+  guestScriptsIsoPath = "${stateDir}/firmware/guest-scripts.iso";
+
   stateDir = "/var/lib/barely-metal";
+
+  # Stable paths for ACPI tables (copied from Nix store at activation time)
+  acpiTableDir = "${stateDir}/firmware/acpi";
+
+  # Map resolved ACPI tables to stable paths under stateDir
+  stableAcpiTables =
+    let
+      userTables = lib.imap0 (i: t: { src = t; dst = "${acpiTableDir}/user_${toString i}.aml"; }) vmCfg.acpiTables;
+      batteryTable = lib.optional vmCfg.useFakeBattery {
+        src = "${compiledAcpiTables}/fake_battery.aml";
+        dst = "${acpiTableDir}/fake_battery.aml";
+      };
+      devicesTable = lib.optional vmCfg.useSpoofedDevices {
+        src = "${compiledAcpiTables}/spoofed_devices.aml";
+        dst = "${acpiTableDir}/spoofed_devices.aml";
+      };
+    in
+    userTables ++ batteryTable ++ devicesTable;
 
   # Build the deploy wrapper script with all resolved values baked in
   deployWrapper = pkgs.writeShellScriptBin "barely-metal-deploy-vm" ''
     exec ${barelyMetalDeploy}/bin/barely-metal-deploy \
-      --qemu "${patchedQemu}/bin/qemu-system-x86_64" \
+      --qemu "${stateDir}/bin/qemu-system-x86_64" \
       --ovmf-code "${stateDir}/firmware/OVMF_CODE.fd" \
       --ovmf-vars "${stateDir}/firmware/OVMF_VARS.fd" \
       --cpu-vendor "${resolvedCpu}" \
@@ -204,7 +232,8 @@ let
       ${lib.optionalString (vmCfg.isoPath != null) "--iso \"${toString vmCfg.isoPath}\""} \
       ${lib.optionalString (vmCfg.diskPath != null) "--disk \"${vmCfg.diskPath}\" --disk-size \"${vmCfg.diskSize}\""} \
       --smbios-bin "${stateDir}/firmware/smbios.bin" \
-      ${lib.concatMapStringsSep " " (t: "--acpi-table \"${toString t}\"") resolvedAcpiTables} \
+      ${lib.concatMapStringsSep " " (t: "--acpi-table \"${t.dst}\"") stableAcpiTables} \
+      ${lib.optionalString cfg.installGuestScripts "--guest-iso \"${guestScriptsIsoPath}\""} \
       ${lib.concatMapStringsSep " " (d: "--evdev \"${d}\"") vmCfg.evdevInputs} \
       "$@"
   '';
@@ -426,13 +455,13 @@ in
       acpiTables = lib.mkOption { type = lib.types.listOf lib.types.path; default = [ ]; };
       useFakeBattery = lib.mkOption {
         type = lib.types.bool;
-        default = false;
-        description = "Include bundled fake battery ACPI SSDT.";
+        default = facterLib.hasBatteryFromProbe probe;
+        description = "Include bundled fake battery ACPI SSDT. Auto-enabled when probe detects a battery.";
       };
       useSpoofedDevices = lib.mkOption {
         type = lib.types.bool;
-        default = false;
-        description = "Include bundled spoofed ACPI devices table (power button, EC, fan, AC adapter).";
+        default = true;
+        description = "Include bundled spoofed ACPI devices table (power button, EC, fan, AC adapter). Required for proper power state reporting.";
       };
     };
 
@@ -530,7 +559,20 @@ in
           virtFwVars = pkgs.python3Packages.virt-firmware or null;
         in
         ''
-          mkdir -p ${stateDir}/firmware
+          mkdir -p ${stateDir}/firmware ${acpiTableDir} ${stateDir}/bin
+
+          # Stable symlink for QEMU emulator (survives Nix GC via nix-store --add-root)
+          ln -sfn "${patchedQemu}/bin/qemu-system-x86_64" "${stateDir}/bin/qemu-system-x86_64"
+
+          # Copy compiled ACPI tables to stable paths (survives Nix GC)
+          ${lib.concatMapStringsSep "\n" (t: ''
+            cp "${t.src}" "${t.dst}"
+            chmod 644 "${t.dst}"
+          '') stableAcpiTables}
+
+          # Copy guest scripts ISO to stable path
+          cp "${guestScriptsIso}" "${guestScriptsIsoPath}"
+          chmod 644 "${guestScriptsIsoPath}"
 
           # Generate SMBIOS binary
           ${lib.optionalString spoofCfg.generateSmbiosBin ''
@@ -554,22 +596,59 @@ in
               VARS_DST="${stateDir}/firmware/OVMF_VARS.fd"
               JSON_TMP=$(mktemp)
 
-              # Extract EFI variables into JSON for virt-fw-vars
+              read_efi_var() {
+                local f="$1" var_name="$2"
+                local guid attr data
+                guid=$(basename "$f" | ${pkgs.gnused}/bin/sed "s/^$var_name-//")
+                attr=$(od -An -N4 -tu4 "$f" | tr -d ' ')
+                data=$(dd if="$f" bs=1 skip=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+                echo "$guid $attr $data"
+              }
+
+              emit_var() {
+                local var="$1" guid="$2" attr="$3" data="$4" first_ref="$5"
+                eval "local is_first=\$$first_ref"
+                if [ "$is_first" = true ]; then eval "$first_ref=false"; else echo ','; fi
+                echo "      {\"name\": \"$var\", \"guid\": \"$guid\", \"attr\": $attr, \"data\": \"$data\"}"
+              }
+
               {
-                echo '['
+                echo '{'
+                echo '  "version": 2,'
+                echo '  "variables": ['
                 first=true
+
+                # Track which variables we found
+                declare -A found_vars
+
+                # Extract all EFI Secure Boot variables from host
                 for var in PK KEK db dbx PKDefault KEKDefault dbDefault dbxDefault; do
                   varpath="/sys/firmware/efi/efivars/$var-*"
                   for f in $varpath; do
                     [ -f "$f" ] || continue
-                    guid=$(basename "$f" | ${pkgs.gnused}/bin/sed "s/^$var-//")
-                    attr=$(od -An -N4 -tu4 "$f" | tr -d ' ')
-                    data=$(dd if="$f" bs=1 skip=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
-                    if [ "$first" = true ]; then first=false; else echo ','; fi
-                    echo "  {\"name\": \"$var\", \"guid\": \"$guid\", \"attr\": $attr, \"data\": \"$data\"}"
+                    read -r guid attr data <<< "$(read_efi_var "$f" "$var")"
+                    emit_var "$var" "$guid" "$attr" "$data" first
+                    found_vars[$var]=1
                   done
                 done
-                echo ']'
+
+                # For each *Default variable that wasn't found on the host,
+                # synthesize it from the corresponding non-Default variable.
+                # VMAware's NVRAM check requires PKDefault, KEKDefault, dbxDefault to exist.
+                for pair in "PK:PKDefault" "KEK:KEKDefault" "db:dbDefault" "dbx:dbxDefault"; do
+                  src="''${pair%%:*}"
+                  dst="''${pair##*:}"
+                  if [ -z "''${found_vars[$dst]+x}" ] && [ -n "''${found_vars[$src]+x}" ]; then
+                    for f in /sys/firmware/efi/efivars/$src-*; do
+                      [ -f "$f" ] || continue
+                      read -r guid attr data <<< "$(read_efi_var "$f" "$src")"
+                      emit_var "$dst" "$guid" "$attr" "$data" first
+                    done
+                  fi
+                done
+
+                echo '  ]'
+                echo '}'
               } > "$JSON_TMP"
 
               ${virtFwVars}/bin/virt-fw-vars \

@@ -91,6 +91,35 @@ stdenv.mkDerivation {
       -e 's@(PcdAcpiDefaultCreatorRevision)\|0x[0-9a-fA-F]+\|@\1|${acpiCreatorRevision}|@' \
       MdeModulePkg/MdeModulePkg.dec
 
+    # Scrub "Bochs" strings from QemuVideoDxe (compiled into firmware binary,
+    # detectable by scanners that read raw FIRM/UEFI tables on Windows)
+    for f in OvmfPkg/QemuVideoDxe/Driver.c OvmfPkg/QemuVideoDxe/Qemu.h OvmfPkg/QemuVideoDxe/Initialize.c OvmfPkg/QemuVideoDxe/Gop.c; do
+      if [ -f "$f" ]; then
+        sed -i \
+          -e 's/BochsRead/VgaRegRead/g' \
+          -e 's/BochsWrite/VgaRegWrite/g' \
+          -e 's/InitializeBochsGraphicsMode/InitializeStdGraphicsMode/g' \
+          -e 's/QemuVideoBochsModeSetup/QemuVideoStdModeSetup/g' \
+          -e 's/QemuVideoBochsModes/QemuVideoStdModes/g' \
+          -e 's/QemuVideoBochsAddMode/QemuVideoStdAddMode/g' \
+          -e 's/QemuVideoBochsEdid/QemuVideoStdEdid/g' \
+          -e 's/QEMU_VIDEO_BOCHS_MODE_COUNT/QEMU_VIDEO_STD_MODE_COUNT/g' \
+          -e 's/QEMU_VIDEO_BOCHS_MMIO/QEMU_VIDEO_STD_MMIO/g' \
+          -e 's/QEMU_VIDEO_BOCHS/QEMU_VIDEO_STD/g' \
+          -e 's/QEMU_VIDEO_BOCHS_MODES/QEMU_VIDEO_STD_MODES/g' \
+          -e 's/BochsId/VgaRegId/g' \
+          -e 's/"Bochs/"Std/g' \
+          -e 's/"Skipping Bochs/"Skipping Std/g' \
+          -e 's/"Adding Bochs/"Adding Std/g' \
+          -e 's/"QemuVideo: BochsID/"QemuVideo: VgaRegID/g' \
+          "$f"
+      fi
+    done
+
+    # Also scrub the Bochs debug port magic reference
+    sed -i 's/BOCHS_DEBUG_PORT_MAGIC/STD_DEBUG_PORT_MAGIC/g' \
+      OvmfPkg/Library/PlatformDebugLibIoPort/DebugIoPortQemu.c 2>/dev/null || true
+
     # Boot logo replacement (removes EDK2/Tux fingerprint)
     ${lib.optionalString (bootLogo != null) ''
       cp -v ${bootLogo} MdeModulePkg/Logo/Logo.bmp
