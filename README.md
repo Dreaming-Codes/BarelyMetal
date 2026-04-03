@@ -90,7 +90,7 @@ The facter report should be regenerated if you change hardware (new GPU, differe
 The probe tool reads ACPI tables, BIOS/DMI data, and CPU info that the Nix sandbox cannot access at build time. Run it once on your host:
 
 ```sh
-sudo barely-metal-probe -o probe.json
+sudo nix run github:Dreaming-Codes/BarelyMetal -- -o probe.json
 ```
 
 If the host has a UEFI boot logo (most branded laptops/desktops), the probe tool will also save `boot-logo.bmp` alongside the JSON. This replaces the stock TianoCore/EDK2 logo — a strong OVMF fingerprint.
